@@ -1,0 +1,8 @@
+There are errors in the paper (I'm looking at the arxiv version):
+
+* The syntax of their language on page 12:4 doesn't include the op2
+  constructor.
+
+* In figure 1, not all ask-env are in italics. Also, not all local-env are
+  in italics. Not all ext are in italics either.
+
