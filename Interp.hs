@@ -5,6 +5,8 @@ module Interp where
 
 import Control.Monad.Reader
 import Control.Monad.State
+import Control.Monad.Except
+import Control.Monad.Writer
 
 type Var = Int
 
@@ -21,6 +23,14 @@ data Exp =
   | Rec Var Exp
   | Lam Var Exp
     deriving Show
+
+instance Num Exp where
+  e1 + e2 = Op2 Plus  e1 e2
+  e1 - e2 = Op2 Minus e1 e2
+  e1 * e2 = Op2 Mult  e1 e2
+  fromInteger i = Num (fromInteger i)
+  abs = error "abs undefined"
+  signum = error "signum undefined"
 
 data Op =
     Plus
@@ -97,6 +107,42 @@ deltaAt = Delta {
   isZero = \(N i) -> return (i == 0)
   }
 
-mrun m = runState (runReaderT m []) []
+deltaFail = deltaAt {
+  delta = \o n m -> case (o,n,m) of
+      (Div, _, N 0) -> throwError "Division by zero"
+      _ -> delta (deltaAt) o n m
+  }
 
-eval e = mrun ((fix (ev deltaAt store allocAt)) e)
+-- Standard semantics
+
+mRun m = evalState (runReaderT m []) []
+
+eval e = mRun ((fix (ev deltaAt store allocAt)) e)
+
+-- Failure semantics
+
+failRun m = runState (runExceptT (runReaderT m [])) []
+
+evalFail e = failRun (fix (ev deltaFail store allocAt) e)
+
+-- Trace semantics
+
+ev_tell ev0 ev e = do rho   <- ask
+                      sigma <- get
+                      tell [(e, rho, sigma)]
+                      ev0 ev e
+
+traceRun m = runWriter (runStateT (runExceptT (runReaderT m [])) [])
+
+evalTrace e = traceRun (fix (ev_tell (ev deltaFail store allocAt)) e)
+
+
+-- Dead code Collecting semantics
+-- This requires two state monads which is not so convenient with
+-- the mtl approach. I need to think about how to do it better.
+{-
+ev_dead ev0 ev e = do
+  theta <- get
+  put (delete e theta)
+  ev0 ev e
+-}
