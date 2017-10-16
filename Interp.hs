@@ -66,19 +66,26 @@ instance Num n => Num (Val n) where
   signum = error "signum for Val undefined"
 
 data N = NVal
+  | IVal Int
 
 instance Eq N where
-  _ == _ = True
+  NVal == NVal = True
+  IVal i == IVal j = i == j
+  _ == _ = False
 
 instance Ord N where
   _ <= _ = True
 
 instance Num N where
-  NVal + NVal = NVal
-  NVal - NVal = NVal
-  NVal * NVal = NVal
-  fromInteger _ = NVal
-  abs NVal = NVal
+  IVal i + IVal j = IVal (i+j)
+  _ + _ = NVal
+  IVal i - IVal j = IVal (i-j)
+  _ - _ = NVal
+  IVal i * IVal j = IVal (i*j)
+  _ * _ = NVal
+  fromInteger i = IVal (fromInteger i)
+  abs (IVal i) = IVal (abs i)
+  abs _ = NVal
   signum = error "signum for N undefined"
 
 data Store n m = Store {
@@ -220,17 +227,19 @@ evalDead e = deadRun (eval_dead (fix (evDead (ev deltaAt store allocAt))) e)
 
 deltaAbst = Delta {
   delta = \o m n -> case (o,m,n) of
-      (Plus, _, _) -> return (N (Left NVal))
-      (Div , _, N (Right n)) -> if n == 0
-                                      then throwError "Division by zero"
-                                      else return (N (Left NVal))
-      (Div, _, N (Left NVal)) ->
+      (Plus, N (IVal i), N (IVal j)) -> return (N (IVal (i+j)))
+      (Plus, _, _) -> return (N NVal)
+      (Div , N (IVal i) , N (IVal n)) ->
+        if n == 0
+        then throwError "Division by zero"
+        else return (N (IVal (i `div` n)))
+      (Div, _, N NVal) ->
         mplus (throwError "Division by zero")
-        (return (N (Left NVal))),
+              (return (N NVal)),
   isZero = \v -> case v of
-      N (Left NVal) -> mplus (return True)
-                             (return False)
-      N (Right n) -> return (n == 0)
+      N NVal -> mplus (return True)
+                      (return False)
+      N (IVal n) -> return (n == 0)
   }
 
 allocAbst = Alloc {
