@@ -17,7 +17,7 @@ extra-source-files:  ChangeLog.md, README.md
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Interp, Interp2, MyLogicT
+  exposed-modules:     Interp
   -- other-modules:       
   other-extensions:    RecordWildCards
   build-depends:       base >=4.9 && <4.10, mtl, logict, containers
