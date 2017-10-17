@@ -275,3 +275,32 @@ evCache ev0 ev e = do
 
 exAbst = (App (Lam 0 (Op2 Plus (App (Var 0) (Num 1)) (App (Var 0)(Num 2)))) (Lam 1 (Var 1)))
 resAbst = evalAbst exAbst
+
+exAbst' = let_ (lam (\x -> x)) (\f ->
+          (App (App (lam (\y -> lam (\z -> z))) (App f 1)) (App f 2)))
+
+-- A shallow embedding to write examples in an easy fashion.
+
+let_ :: Exp -> (Exp -> Exp) -> Exp
+let_ foo bar = App (Lam v body) foo
+  where (v, body) = bind bar
+
+lam :: (Exp -> Exp) -> Exp
+lam f = Lam v body
+  where (v, body) = bind f
+
+bind :: (Exp -> Exp) -> (Var, Exp)
+bind f = (v, body)
+  where v    = newVar body
+        body = f (Var v)
+
+newVar :: Exp -> Var
+newVar (Var _) = 0
+newVar (Num _) = 0
+newVar (If e0 e1 e2) = newVar e0 ⊔ newVar e1 ⊔ newVar e2
+newVar (Op2 _ e0 e1) = newVar e0 ⊔ newVar e1
+newVar (App e0 e1)   = newVar e0 ⊔ newVar e1
+newVar (Rec v _) = v + 1
+newVar (Lam v _) = v + 1
+
+v1 ⊔ v2 = max v1 v2
