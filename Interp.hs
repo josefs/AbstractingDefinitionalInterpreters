@@ -59,7 +59,8 @@ instance Num n => Num (Val n) where
 
 data N = NVal
   | IVal Int
-
+    deriving (Eq, Ord, Show)
+{-
 instance Eq N where
   NVal == NVal = True
   IVal i == IVal j = i == j
@@ -67,7 +68,7 @@ instance Eq N where
 
 instance Ord N where
   _ <= _ = True
-
+-}
 instance Num N where
   IVal i + IVal j = IVal (i+j)
   _ + _ = NVal
@@ -251,3 +252,26 @@ forP t body = Prelude.foldr (\a r -> body a `mplus` r) mzero t
 abstRun m = runND (runStateTStore (runExceptT (runReaderT m [])) Map.empty)
 
 evalAbst e = abstRun (fix (ev deltaAbst storeNd allocAbst) e)
+
+
+-- Caching
+{-
+evCache ev0 ev e = do
+  rho <- env
+  sigma <- getStore
+  let state = (e,rho,sigma)
+  out <- getCacheOut
+  if state `Set.elem` out
+    then forP () $ \ (v, rho) -> do
+           putStore ?
+           return ?
+    else do
+      inV <- askCacheIn
+-}
+
+----------------------------------------
+-- Examples
+----------------------------------------
+
+exAbst = (App (Lam 0 (Op2 Plus (App (Var 0) (Num 1)) (App (Var 0)(Num 2)))) (Lam 1 (Var 1)))
+resAbst = evalAbst exAbst
