@@ -1,7 +1,7 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE NoMonomorphismRestriction  #-}
 {-# LANGUAGE FlexibleContexts           #-}
-module Interp2 where
+module Interp where
 
 import Control.Monad.Reader
 import Control.Monad.State
