@@ -89,6 +89,45 @@ instance MonadStateDead s m => MonadStateDead s (StateTStore s' m) where
   updateDead = lift . updateDead
 
 ----------------------------------------
+-- StateTCacheOut
+----------------------------------------
+
+newtype StateTCacheOut s m a = StateTCacheOut (StateT s m a)
+  deriving (Functor, Applicative, Monad, MonadTrans, MonadFix,
+            MonadPlus, Alternative, MonadIO,
+            MonadReader r, MonadError e, MonadWriter w)
+
+runStateTCacheOut :: StateTCacheOut s m a -> s -> m (a, s)
+runStateTCacheOut (StateTCacheOut m) s = runStateT m s
+
+mkStateTCacheOut m = StateTCacheOut (StateT m)
+
+class Monad m => MonadStateCacheOut s m | m -> s where
+  getCacheOut :: m s
+  putCacheOut :: s -> m ()
+  updateCacheOut :: (s -> s) -> m ()
+
+instance Monad m => MonadStateCacheOut s (StateTCacheOut s m) where
+  getCacheOut = StateTCacheOut get
+  putCacheOut s = StateTCacheOut (put s)
+  updateCacheOut f = StateTCacheOut (modify f)
+
+instance MonadStateCacheOut s m => MonadStateCacheOut s (ReaderT e m) where
+  getCacheOut = ReaderT (\_ -> getCacheOut)
+  putCacheOut s = ReaderT (\_ -> putCacheOut s)
+  updateCacheOut f = ReaderT (\_ -> updateCacheOut f)
+
+instance MonadStateCacheOut s m => MonadStateCacheOut s (ExceptT e m) where
+  getCacheOut = lift getCacheOut
+  putCacheOut = lift . putCacheOut
+  updateCacheOut = lift . updateCacheOut
+
+instance MonadStateCacheOut s m => MonadStateCacheOut s (StateTStore s' m) where
+  getCacheOut = lift getCacheOut
+  putCacheOut = lift . putCacheOut
+  updateCacheOut = lift . updateCacheOut
+
+----------------------------------------
 -- Nondeterminism monad
 ----------------------------------------
 
@@ -136,3 +175,20 @@ class Monad m => MonadReaderEnv e m | m -> e where
 instance Monad m => MonadReaderEnv e (ReaderTEnv e m) where
   askEnv = ReaderTEnv ask
   localEnv f (ReaderTEnv r) = ReaderTEnv (local f r)
+
+----------------------------------------
+-- Cache in reader monad
+----------------------------------------
+
+newtype ReaderTCacheIn r m a = ReaderTCacheIn (ReaderT r m a)
+  deriving (Functor, Applicative, Monad, MonadTrans, MonadFix,
+            MonadPlus, Alternative, MonadIO,
+            MonadState s, MonadError e, MonadWriter w)
+
+class Monad m => MonadReaderCacheIn e m | m -> e where
+  askCacheIn   :: m e
+  localCacheIn :: (e -> e) -> m a -> m a
+
+instance Monad m => MonadReaderCacheIn e (ReaderTCacheIn e m) where
+  askCacheIn = ReaderTCacheIn ask
+  localCacheIn f (ReaderTCacheIn r) = ReaderTCacheIn (local f r)

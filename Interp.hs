@@ -9,6 +9,7 @@ import Control.Monad.Except
 import Control.Monad.Writer
 import AbstractionMonads
 import Data.IntMap as IMap
+import Data.Map.Strict as Map
 import Data.Set as Set
 import Control.Applicative
 import Data.Functor.Identity
@@ -241,7 +242,7 @@ allocAbst = Alloc {
 
 storeNd = Store {
   find = \a -> do sigma <- getStore
-                  forP (findWithDefault Set.empty a sigma) $ \v ->
+                  forP (IMap.findWithDefault Set.empty a sigma) $ \v ->
                     return v,
   ext = \a v -> updateStore (IMap.insertWith Set.union a (Set.singleton v))
   }
@@ -255,19 +256,27 @@ evalAbst e = abstRun (fix (ev deltaAbst storeNd allocAbst) e)
 
 
 -- Caching
-{-
+
 evCache ev0 ev e = do
-  rho <- env
+  rho <- ask
   sigma <- getStore
   let state = (e,rho,sigma)
-  out <- getCacheOut
-  if state `Set.elem` out
-    then forP () $ \ (v, rho) -> do
-           putStore ?
-           return ?
-    else do
-      inV <- askCacheIn
--}
+  outC <- getCacheOut
+  case Map.lookup state outC of
+    Just valStoreSet ->
+      forP valStoreSet $ \ (v, sigma') -> do
+        putStore sigma'
+        return v
+    Nothing -> do
+      inC <- askCacheIn
+      let valStore0 = Map.findWithDefault Set.empty state inC
+      putCacheOut (Map.insertWith Set.union state valStore0 outC)
+      v <- ev0 ev e
+      sigma' <- getStore
+      let valStore' = (v,sigma')
+      updateCacheOut (\out ->
+        Map.insertWith Set.union state (Set.singleton valStore') out)
+      return v
 
 ----------------------------------------
 -- Examples
