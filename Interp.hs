@@ -8,7 +8,7 @@ import Control.Monad.State
 import Control.Monad.Except
 import Control.Monad.Writer
 import AbstractionMonads
-import Data.IntMap as Map
+import Data.IntMap as IMap
 import Data.Set as Set
 import Control.Applicative
 import Data.Functor.Identity
@@ -243,13 +243,13 @@ storeNd = Store {
   find = \a -> do sigma <- getStore
                   forP (findWithDefault Set.empty a sigma) $ \v ->
                     return v,
-  ext = \a v -> updateStore (Map.insertWith Set.union a (Set.singleton v))
+  ext = \a v -> updateStore (IMap.insertWith Set.union a (Set.singleton v))
   }
 
 forP :: (Foldable f, MonadPlus m) => f a -> (a -> m b) -> m b
 forP t body = Prelude.foldr (\a r -> body a `mplus` r) mzero t 
 
-abstRun m = runND (runStateTStore (runExceptT (runReaderT m [])) Map.empty)
+abstRun m = runND (runStateTStore (runExceptT (runReaderT m [])) IMap.empty)
 
 evalAbst e = abstRun (fix (ev deltaAbst storeNd allocAbst) e)
 
