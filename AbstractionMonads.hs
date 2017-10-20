@@ -138,6 +138,9 @@ runND :: ND Identity a -> [a]
 runND (ND f) = runIdentity $
   f (\a (Identity as) -> Identity (a:as)) (Identity [])
 
+runNDT :: Monad m => ND m a -> m [a]
+runNDT (ND f) = f (\a m -> fmap (a:) m) (return [])
+
 instance Monad (ND m) where
   return a = ND (\k -> k a)
   ND f >>= g = ND (\k -> f (\a -> unND (g a) k))
