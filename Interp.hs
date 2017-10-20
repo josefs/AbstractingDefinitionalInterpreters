@@ -61,15 +61,7 @@ instance Num n => Num (Val n) where
 data N = NVal
   | IVal Int
     deriving (Eq, Ord, Show)
-{-
-instance Eq N where
-  NVal == NVal = True
-  IVal i == IVal j = i == j
-  _ == _ = False
 
-instance Ord N where
-  _ <= _ = True
--}
 instance Num N where
   IVal i + IVal j = IVal (i+j)
   _ + _ = NVal
@@ -151,19 +143,25 @@ deltaFail = deltaAt {
       _ -> delta (deltaAt) o n m
   }
 
+----------------------------------------
 -- Standard semantics
+----------------------------------------
 
 mRun m = evalStateStore (runReaderT m []) []
 
 eval e = mRun ((fix (ev deltaAt store allocAt)) e)
 
+----------------------------------------
 -- Failure semantics
+----------------------------------------
 
 failRun m = runStateStore (runExceptT (runReaderT m [])) []
 
 evalFail e = failRun (fix (ev deltaFail store allocAt) e)
 
+----------------------------------------
 -- Trace semantics
+----------------------------------------
 
 ev_tell ev0 ev e = do rho   <- ask
                       sigma <- getStore
@@ -175,7 +173,10 @@ traceRun m = runWriter (runStateTStore (runExceptT (runReaderT m [])) [])
 evalTrace e = traceRun (fix (ev_tell (ev deltaFail store allocAt)) e)
 
 
+----------------------------------------
 -- Dead code Collecting semantics
+----------------------------------------
+
 -- This requires two state monads which is not so convenient with
 -- the mtl approach. I need to think about how to do it better.
 
@@ -217,7 +218,9 @@ deadRun m =
 
 evalDead e = deadRun (eval_dead (fix (evDead (ev deltaAt store allocAt))) e)
 
+----------------------------------------
 -- Finitization
+----------------------------------------
 
 deltaAbst = Delta {
   delta = \o m n -> case (o,m,n) of
@@ -254,8 +257,9 @@ abstRun m = runND (runStateTStore (runExceptT (runReaderT m [])) IMap.empty)
 
 evalAbst e = abstRun (fix (ev deltaAbst storeNd allocAbst) e)
 
-
+----------------------------------------
 -- Caching
+----------------------------------------
 
 evCache ev0 ev e = do
   rho <- ask
@@ -277,6 +281,8 @@ evCache ev0 ev e = do
       updateCacheOut (\out ->
         Map.insertWith Set.union state (Set.singleton valStore') out)
       return v
+
+
 
 ----------------------------------------
 -- Examples
