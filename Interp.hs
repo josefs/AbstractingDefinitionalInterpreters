@@ -282,7 +282,26 @@ evCache ev0 ev e = do
         Map.insertWith Set.union state (Set.singleton valStore') out)
       return v
 
+-- cacheRun m = runState (runReaderT (runNDT (runStateT (runExceptT (runReaderT m _) ) _) ) _) _
 
+fixCache eval e = do
+  rho <- ask
+  sigma <- getStore
+  let state = (e,rho,sigma)
+  fixp <- mlfp (\fp -> do putCacheOut Map.empty
+                          putStore sigma
+                          localCacheIn (const fp) (eval e) -- ? const
+                          getCacheOut)
+  forP (Map.lookup state fixp) $ \(v,sigma) -> do
+    putStore sigma
+    return v
+
+mlfp f = let loop x = do
+               x' <- f x
+               if x == x'
+                 then return x
+                 else loop x'
+         in loop (∅)
 
 ----------------------------------------
 -- Examples
@@ -319,3 +338,19 @@ newVar (Rec v _) = v + 1
 newVar (Lam v _) = v + 1
 
 v1 ⊔ v2 = max v1 v2
+
+----------------------------------------
+-- Notation
+----------------------------------------
+
+class Empty a where
+  (∅) :: a
+
+instance Ord a => Empty (Set.Set a) where
+  (∅) = Set.empty
+
+instance Ord k => Empty (Map.Map k v) where
+  (∅) = Map.empty
+
+instance Empty (IMap.IntMap v) where
+  (∅) = IMap.empty
