@@ -251,7 +251,7 @@ storeNd = Store {
   }
 
 forP :: (Foldable f, MonadPlus m) => f a -> (a -> m b) -> m b
-forP t body = Prelude.foldr (\a r -> body a `mplus` r) mzero t 
+forP t body = Prelude.foldr (\a r -> body a `mplus` r) mzero t
 
 abstRun m = runND (runStateTStore (runExceptT (runReaderT m [])) IMap.empty)
 
@@ -302,6 +302,29 @@ mlfp f = let loop x = do
                  then return x
                  else loop x'
          in loop (∅)
+
+----------------------------------------
+-- Store crush
+----------------------------------------
+
+storeCrush = Store {
+  find = \a -> do
+      σ <- getStore
+      forP (Map.findWithDefault Set.empty a σ) $ \v ->
+        return v,
+  ext = \a v ->
+    updateStore (\σ -> if a `Map.member` σ
+                       then Map.adjust (crush v) a σ
+                       else Map.insert a (Set.singleton v) σ)
+  }
+
+crush :: Val N -> Set (Val N) -> Set (Val N)
+crush v@(Clo _ _ _) vs = Set.insert v vs
+crush v vs = Set.insert (N NVal) (Set.filter isClosure vs)
+
+isClosure :: Val n -> Bool
+isClosure (Clo _ _ _) = True
+isClosure _           = False
 
 ----------------------------------------
 -- Examples
