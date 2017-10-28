@@ -224,8 +224,9 @@ evalDead e = deadRun (eval_dead (fix (evDead (ev deltaAt store allocAt))) e)
 
 deltaAbst = Delta {
   delta = \o m n -> case (o,m,n) of
-      (Plus, N (IVal i), N (IVal j)) -> return (N (IVal (i+j)))
-      (Plus, _, _) -> return (N NVal)
+      (Plus,  _, _) -> return (N NVal)
+      (Minus, _, _) -> return (N NVal)
+      (Mult,  _, _) -> return (N NVal)
       (Div , N (IVal i) , N (IVal n)) ->
         if n == 0
         then throwError "Division by zero"
@@ -306,6 +307,28 @@ mlfp f = let loop x = do
 ----------------------------------------
 -- Store crush
 ----------------------------------------
+
+deltaPrecise = Delta {
+  delta = \o m n -> case (o,m,n) of
+      (Plus, N (IVal i), N (IVal j)) -> return (N (IVal (i+j)))
+      (Plus, _, _) -> return (N NVal)
+      (Minus, N (IVal i), N (IVal j)) -> return (N (IVal (i-j)))
+      (Minus, _, _) -> return (N NVal)
+      (Mult, N (IVal i), N (IVal j)) -> return (N (IVal (i*j)))
+      (Mult, _, _) -> return (N NVal)
+      (Div , N (IVal i) , N (IVal n)) ->
+        if n == 0
+        then throwError "Division by zero"
+        else return (N (IVal (i `div` n)))
+      (Div, _, N NVal) ->
+        mplus (throwError "Division by zero")
+              (return (N NVal)),
+  isZero = \v -> case v of
+      N NVal -> mplus (return True)
+                      (return False)
+      N (IVal n) -> return (n == 0)
+  }
+
 
 storeCrush = Store {
   find = \a -> do
