@@ -193,9 +193,6 @@ evalTrace e = traceRun (fix (ev_tell (ev deltaFail store allocAt)) e)
 -- Dead code Collecting semantics
 ----------------------------------------
 
--- This requires two state monads which is not so convenient with
--- the mtl approach. I need to think about how to do it better.
-{-
 evDead ev0 ev e = do
   theta <- getDead
   putDead (Set.delete e theta)
@@ -224,16 +221,17 @@ subExps e@(Lam _ e1) = Set.unions [Set.singleton e
 
 
 deadRun m =
-  runExcept
-  (runStateTDead
-   (runStateTStore
-    (runReaderT m [])
+  run $
+  runError
+  (runDeadState
+   (runStoreState
+    (runReader m ([] :: [(Var,Addr)]))
     [])
    Set.empty
    )
 
 evalDead e = deadRun (eval_dead (fix (evDead (ev deltaAt store allocAt))) e)
--}
+
 ----------------------------------------
 -- Finitization
 ----------------------------------------
