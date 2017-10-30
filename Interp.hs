@@ -28,7 +28,16 @@ data Exp =
   | App Exp Exp
   | Rec Var Exp
   | Lam Var Exp
+-- Symbolic abstraction
+  | Sym Var
     deriving (Show, Eq, Ord)
+
+data PathExpression
+  = P  Exp
+  | PN Exp
+    deriving (Show, Eq, Ord)
+
+type PathCondition = Set.Set PathExpression
 
 instance Num Exp where
   e1 + e2 = Op2 Plus  e1 e2
@@ -348,6 +357,108 @@ crush v vs = Set.insert (N NVal) (Set.filter isClosure vs)
 isClosure :: Val n -> Bool
 isClosure (Clo _ _ _) = True
 isClosure _           = False
+
+----------------------------------------
+-- Symbolic Execution
+----------------------------------------
+
+-- This is going to require changing the value type!
+{-
+evSymbolic ev0 ev (Sym x) = return (Var x)
+evSymbolic ev0 ev e       = ev0 ev e
+
+deltaSymbolic = Delta {
+  delta = \o n m ->
+    case (o, n, m) of
+      (Div, _, _) -> do
+        z <- isZero m
+        if z then fail
+          else case (n, m) of
+                 (N (IVal i), N (IVal j)) -> return (N (IVal (i `div`j)))
+                 _ -> return
+-}
+
+----------------------------------------
+-- Garbage Collection
+----------------------------------------
+
+evCacheGC ev0 ev e = do
+  rho   <- ask
+  sigma <- getStore
+  psi   <- askRoots
+  let state = (e,rho,sigma,psi)
+  outC <- getCacheOut
+  case Map.lookup state outC of
+    Just valStoreSet ->
+      forP valStoreSet $ \ (v, sigma') -> do
+        putStore sigma'
+        return v
+    Nothing -> do
+      inC <- askCacheIn
+      let valStore0 = Map.findWithDefault Set.empty state inC
+      putCacheOut (Map.insertWith Set.union state valStore0 outC)
+      v <- ev0 ev e
+      sigma' <- getStore
+      let valStore' = (v,sigma')
+      updateCacheOut (\out ->
+        Map.insertWith Set.union state (Set.singleton valStore') out)
+      return v
+
+fixCacheGC eval e = do
+  rho   <- ask
+  sigma <- getStore
+  psi   <- askRoots
+  let state = (e,rho,sigma,psi)
+  fixp <- mlfp (\fp -> do putCacheOut Map.empty
+                          putStore sigma
+                          localCacheIn (const fp) (eval e) -- ? const
+                          getCacheOut)
+  forP (Map.lookup state fixp) $ \(v,sigma) -> do
+    putStore sigma
+    return v
+{- Doesn't type check at the moment
+evCollect ev0 ev e = do
+  psi <- askRoots
+  v   <- (ev0 ev) e
+  updateStore (gc (Set.union psi (rootsV v)))
+  return v
+-}
+gc = undefined
+rootsV = undefined
+
+{- Doesn't type check at the moment
+evRoots (Delta {..}) _ _ ev0 ev (If e0 e1 e2) = do
+  rho <- askEnv
+  let psi = Set.union (roots e1 rho) (roots e2 rho)
+  v <- extraRoots psi (ev e0)
+  b <- isTruish v
+  ev (If b e1 e2)
+evRoots (Delta {..}) _ _ ev0 ev (Op2 o e0 e1) = do
+  rho <- askEnv
+  v0  <- extraRoots (roots e1 rho) (ev e0)
+  v1  <- extraRoots (rootsV v0)    (ev e1)
+  delta o v0 v1
+evRoots _ (Store {..}) (Alloc {..}) ev0 ev (App e0 e1) = do
+  rho <- askEnv
+  v0  <- extraRoots (roots e1 rho) (ev e0)
+  v1  <- extraRoots (rootsV v0)    (ev e1)
+  case v0 of
+    Clo x e2 rho' -> do
+      a <- alloc x
+      ext a v1
+      localEnv (const ((x,a):rho')) (ev e2)
+evRoots _ _ _ ev0 ev e =
+  ev0 ev e
+-}
+
+askRoots = undefined
+extraRoots = undefined
+isTruish = undefined
+roots = undefined
+
+evRun = undefined
+
+-- evalGC e = evRun (fixCache (fix (evCacheGC (evCollect (evRoots deltaAbst storeNd allocAbst (ev deltaAbst storeNd allocAbst)))))) e
 
 ----------------------------------------
 -- Examples
