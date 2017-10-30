@@ -10,6 +10,7 @@ import Data.Set as Set
 import Control.Applicative
 import Data.Functor.Identity
 
+import Control.Monad
 import Control.Monad.Freer
 import Control.Monad.Freer.Reader
 import Control.Monad.Freer.Exception
@@ -235,7 +236,7 @@ evalDead e = deadRun (eval_dead (fix (evDead (ev deltaAt store allocAt))) e)
 ----------------------------------------
 -- Finitization
 ----------------------------------------
-{-
+
 deltaAbst = Delta {
   delta = \o m n -> case (o,m,n) of
       (Plus,  _, _) -> return (N NVal)
@@ -262,16 +263,16 @@ storeNd = Store {
   find = \a -> do sigma <- getStore
                   forP (IMap.findWithDefault Set.empty a sigma) $ \v ->
                     return v,
-  ext = \a v -> updateStore (IMap.insertWith Set.union a (Set.singleton v))
+  ext = \a v -> modifyStore (IMap.insertWith Set.union a (Set.singleton v))
   }
 
 forP :: (Foldable f, MonadPlus m) => f a -> (a -> m b) -> m b
 forP t body = Prelude.foldr (\a r -> body a `mplus` r) mzero t
 
-abstRun m = runND (runStateTStore (runExceptT (runReaderT m [])) IMap.empty)
+abstRun m = run (makeChoiceA (runStoreState (runError (runReader m ([] :: [(Var,Addr)]))) IMap.empty))
 
 evalAbst e = abstRun (fix (ev deltaAbst storeNd allocAbst) e)
--}
+
 ----------------------------------------
 -- Caching
 ----------------------------------------
