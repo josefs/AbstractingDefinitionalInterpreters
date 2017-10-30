@@ -1,18 +1,20 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE NoMonomorphismRestriction  #-}
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 module Interp where
 
-import Control.Monad.Reader
-import Control.Monad.State
-import Control.Monad.Except
-import Control.Monad.Writer
-import AbstractionMonads
 import Data.IntMap as IMap
 import Data.Map.Strict as Map
 import Data.Set as Set
 import Control.Applicative
 import Data.Functor.Identity
+
+import Control.Monad.Freer
+import Control.Monad.Freer.Reader
+import Control.Monad.Freer.Exception
+import Control.Monad.Freer.Writer
+import AbstractionEffects
 
 type Var = Int
 
@@ -84,22 +86,22 @@ instance Num N where
   signum = error "signum for N undefined"
 
 data Store n m = Store {
-       find :: Addr -> m (Val n),
-       ext  :: Addr -> Val n -> m ()
+       find :: Addr -> Eff m (Val n),
+       ext  :: Addr -> Val n -> Eff m ()
      }
 
 data Delta n m = Delta {
-       delta  :: Op -> (Val n) -> (Val n) -> m (Val n),
-       isZero :: (Val n) -> m Bool
+       delta  :: Op -> (Val n) -> (Val n) -> Eff m (Val n),
+       isZero :: (Val n) -> Eff m Bool
      }
 
 data Alloc m = Alloc {
-       alloc :: Var -> m Addr
+       alloc :: Var -> Eff m Addr
      }
 
-ev :: (MonadReader [(Var, Addr)] m, Num n) =>
+ev :: (Member (Reader [(Var, Addr)]) m, Num n) =>
       Delta n m -> Store n m -> Alloc m
-   -> (Exp -> m (Val n)) -> (Exp -> m (Val n))
+   -> (Exp -> Eff m (Val n)) -> (Exp -> Eff m (Val n))
 ev (Delta {..}) (Store {..}) (Alloc {..}) eval e =
   case e of
    Num n -> return (fromIntegral n)
@@ -111,8 +113,7 @@ ev (Delta {..}) (Store {..}) (Alloc {..}) eval e =
    Op2 o e0 e1 -> do v0 <- eval e0
                      v1 <- eval e1
                      delta o v0 v1
-   Rec f e -> do rho <- ask
-                 a <- alloc f
+   Rec f e -> do a <- alloc f
                  v <- local ((f,a):) (eval e)
                  ext a v
                  return v
@@ -127,13 +128,15 @@ ev (Delta {..}) (Store {..}) (Alloc {..}) eval e =
 store = Store {
   find = \a -> do sigma <- getStore
                   return (expectJust $ Prelude.lookup a sigma),
-  ext = \a v -> updateStore (\sigma -> (a,v) : sigma)
+  ext = \a v -> modifyStore (\sigma -> (a,v) : sigma)
   }
 
 expectJust (Just a) = a
 
+allocAt :: Member (StoreState [(Var, Addr)]) m => Alloc m
 allocAt = Alloc {
-  alloc = \x -> do sigma <- getStore
+  -- The extra type synonym is needed because effects.
+  alloc = \x -> do sigma :: [(Var, Addr)] <- getStore
                    return (length sigma)
   }
 
@@ -152,11 +155,15 @@ deltaFail = deltaAt {
       _ -> delta (deltaAt) o n m
   }
 
+fix f = let a = f a in a
+
 ----------------------------------------
 -- Standard semantics
 ----------------------------------------
 
-mRun m = evalStateStore (runReaderT m []) []
+-- mRun m = evalStateStore (runReaderT m []) []
+
+mRun m = run (runStoreState (runReader m ([] :: [(Var, Addr)])) [])
 
 eval e = mRun ((fix (ev deltaAt store allocAt)) e)
 
@@ -164,23 +171,23 @@ eval e = mRun ((fix (ev deltaAt store allocAt)) e)
 -- Failure semantics
 ----------------------------------------
 
-failRun m = runStateStore (runExceptT (runReaderT m [])) []
+failRun m = run (runStoreState (runError (runReader m ([] :: [(Var, Addr)]))) [])
 
 evalFail e = failRun (fix (ev deltaFail store allocAt) e)
 
 ----------------------------------------
 -- Trace semantics
 ----------------------------------------
-
+{-
 ev_tell ev0 ev e = do rho   <- ask
                       sigma <- getStore
                       tell [(e, rho, sigma)]
                       ev0 ev e
 
-traceRun m = runWriter (runStateTStore (runExceptT (runReaderT m [])) [])
+traceRun m = run (runWriter (runStoreState (runError (runReader m [])) []))
 
 evalTrace e = traceRun (fix (ev_tell (ev deltaFail store allocAt)) e)
-
+-}
 
 ----------------------------------------
 -- Dead code Collecting semantics
@@ -188,7 +195,7 @@ evalTrace e = traceRun (fix (ev_tell (ev deltaFail store allocAt)) e)
 
 -- This requires two state monads which is not so convenient with
 -- the mtl approach. I need to think about how to do it better.
-
+{-
 evDead ev0 ev e = do
   theta <- getDead
   putDead (Set.delete e theta)
@@ -226,11 +233,11 @@ deadRun m =
    )
 
 evalDead e = deadRun (eval_dead (fix (evDead (ev deltaAt store allocAt))) e)
-
+-}
 ----------------------------------------
 -- Finitization
 ----------------------------------------
-
+{-
 deltaAbst = Delta {
   delta = \o m n -> case (o,m,n) of
       (Plus,  _, _) -> return (N NVal)
@@ -266,11 +273,11 @@ forP t body = Prelude.foldr (\a r -> body a `mplus` r) mzero t
 abstRun m = runND (runStateTStore (runExceptT (runReaderT m [])) IMap.empty)
 
 evalAbst e = abstRun (fix (ev deltaAbst storeNd allocAbst) e)
-
+-}
 ----------------------------------------
 -- Caching
 ----------------------------------------
-
+{-
 evCache ev0 ev e = do
   rho <- ask
   sigma <- getStore
@@ -312,11 +319,11 @@ mlfp f = let loop x = do
                  then return x
                  else loop x'
          in loop (∅)
-
+-}
 ----------------------------------------
 -- Store crush
 ----------------------------------------
-
+{-
 deltaPrecise = Delta {
   delta = \o m n -> case (o,m,n) of
       (Plus, N (IVal i), N (IVal j)) -> return (N (IVal (i+j)))
@@ -357,7 +364,7 @@ crush v vs = Set.insert (N NVal) (Set.filter isClosure vs)
 isClosure :: Val n -> Bool
 isClosure (Clo _ _ _) = True
 isClosure _           = False
-
+-}
 ----------------------------------------
 -- Symbolic Execution
 ----------------------------------------
@@ -381,7 +388,7 @@ deltaSymbolic = Delta {
 ----------------------------------------
 -- Garbage Collection
 ----------------------------------------
-
+{-
 evCacheGC ev0 ev e = do
   rho   <- ask
   sigma <- getStore
@@ -416,6 +423,8 @@ fixCacheGC eval e = do
   forP (Map.lookup state fixp) $ \(v,sigma) -> do
     putStore sigma
     return v
+-}
+
 {- Doesn't type check at the moment
 evCollect ev0 ev e = do
   psi <- askRoots
@@ -465,7 +474,7 @@ evRun = undefined
 ----------------------------------------
 
 exAbst = (App (Lam 0 (Op2 Plus (App (Var 0) (Num 1)) (App (Var 0)(Num 2)))) (Lam 1 (Var 1)))
-resAbst = evalAbst exAbst
+--resAbst = evalAbst exAbst
 
 exAbst' = let_ (lam (\x -> x)) (\f ->
           (App (App (lam (\y -> lam (\z -> z))) (App f 1)) (App f 2)))
