@@ -134,10 +134,12 @@ store = Store {
 
 expectJust (Just a) = a
 
-allocAt :: Member (StoreState [(Var, Addr)]) m => Alloc m
+-- We need to use Integer here, otherwise the Member type function
+-- doesn't know how to select this particular StoreState.
+allocAt :: Member (StoreState [(Addr, Val Integer)]) m => Alloc m
 allocAt = Alloc {
   -- The extra type synonym is needed because effects.
-  alloc = \x -> do sigma :: [(Var, Addr)] <- getStore
+  alloc = \x -> do sigma :: [(Addr, Val Integer)] <- getStore
                    return (length sigma)
   }
 
@@ -231,6 +233,7 @@ deadRun m =
    Set.empty
    )
 
+evalDead :: Exp -> Either e ((Val Integer, [(Addr, Val Integer)]), Set Exp)
 evalDead e = deadRun (eval_dead (fix (evDead (ev deltaAt store allocAt))) e)
 
 ----------------------------------------
@@ -271,6 +274,9 @@ forP t body = Prelude.foldr (\a r -> body a `mplus` r) mzero t
 
 abstRun m = run (makeChoiceA (runStoreState (runError (runReader m ([] :: [(Var,Addr)]))) IMap.empty))
 
+-- I have to write out this type signature, otherwise the type
+-- becomes ambinuous
+evalAbst :: Exp -> [(Either String (Val N), IntMap (Set (Val N)))]
 evalAbst e = abstRun (fix (ev deltaAbst storeNd allocAbst) e)
 
 ----------------------------------------
@@ -473,7 +479,7 @@ evRun = undefined
 ----------------------------------------
 
 exAbst = (App (Lam 0 (Op2 Plus (App (Var 0) (Num 1)) (App (Var 0)(Num 2)))) (Lam 1 (Var 1)))
---resAbst = evalAbst exAbst
+resAbst = evalAbst exAbst
 
 exAbst' = let_ (lam (\x -> x)) (\f ->
           (App (App (lam (\y -> lam (\z -> z))) (App f 1)) (App f 2)))
