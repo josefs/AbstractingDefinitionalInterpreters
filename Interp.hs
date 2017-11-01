@@ -328,7 +328,7 @@ mlfp f = let loop x = do
 ----------------------------------------
 -- Store crush
 ----------------------------------------
-{-
+
 deltaPrecise = Delta {
   delta = \o m n -> case (o,m,n) of
       (Plus, N (IVal i), N (IVal j)) -> return (N (IVal (i+j)))
@@ -357,7 +357,7 @@ storeCrush = Store {
       forP (Map.findWithDefault Set.empty a σ) $ \v ->
         return v,
   ext = \a v ->
-    updateStore (\σ -> if a `Map.member` σ
+    modifyStore (\σ -> if a `Map.member` σ
                        then Map.adjust (crush v) a σ
                        else Map.insert a (Set.singleton v) σ)
   }
@@ -369,7 +369,7 @@ crush v vs = Set.insert (N NVal) (Set.filter isClosure vs)
 isClosure :: Val n -> Bool
 isClosure (Clo _ _ _) = True
 isClosure _           = False
--}
+
 ----------------------------------------
 -- Symbolic Execution
 ----------------------------------------
@@ -434,7 +434,7 @@ fixCacheGC eval e = do
 evCollect ev0 ev e = do
   psi <- askRoots
   v   <- (ev0 ev) e
-  updateStore (gc (Set.union psi (rootsV v)))
+  modifyStore (gc (Set.union psi (rootsV v)))
   return v
 -}
 gc = undefined
