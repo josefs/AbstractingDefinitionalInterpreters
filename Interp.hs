@@ -23,6 +23,8 @@ type Numb = Int
 
 type Addr = Int
 
+type Env = [(Var,Addr)]
+
 data Exp =
     Var Var
   | Num Numb
@@ -300,22 +302,33 @@ evCache ev0 ev e = do
       v <- ev0 ev e
       sigma' <- getStore
       let valStore' = (v,sigma')
-      updateCacheOut (\out ->
+      modifyCacheOut (\out ->
         Map.insertWith Set.union state (Set.singleton valStore') out)
       return v
-
+-}
 -- cacheRun m = runState (runReaderT (runNDT (runStateT (runExceptT (runReaderT m _) ) _) ) _) _
 
+type StoreT = [(Addr, Val N)]
+type Cache = Map (Exp,Env,StoreT) (Set (Var,StoreT))
+
+fixCache :: (Member (StoreState StoreT) r
+            ,Member (Reader [(Var, Addr)]) r
+            ,Member (ReaderCacheIn Cache) r
+            ,Member (CacheOutState Cache) r
+            ,Member NonDetEff r)
+            => (Exp -> Eff r Var) -> Exp -> Eff r Var
 fixCache eval e = do
   rho <- ask
   sigma <- getStore
-  let state = (e,rho,sigma)
-  fixp <- mlfp (\fp -> do putCacheOut Map.empty
-                          putStore sigma
+  let state :: (Exp, Env, StoreT) = (e,rho,sigma)
+  fixp <- mlfp (\fp -> do putCacheOut (Map.empty ::
+                                          Map (Exp,Env,StoreT) (Set (Var,StoreT)))
+                          putStore (sigma :: StoreT)
                           localCacheIn (const fp) (eval e) -- ? const
-                          getCacheOut)
-  forP (Map.lookup state fixp) $ \(v,sigma) -> do
-    putStore sigma
+                          cache <- getCacheOut
+                          return (cache :: Cache))
+  forP (Map.findWithDefault Set.empty state fixp) $ \(v,sigma) -> do
+    putStore (sigma :: StoreT)
     return v
 
 mlfp f = let loop x = do
@@ -324,7 +337,7 @@ mlfp f = let loop x = do
                  then return x
                  else loop x'
          in loop (∅)
--}
+
 ----------------------------------------
 -- Store crush
 ----------------------------------------
