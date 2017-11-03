@@ -284,11 +284,18 @@ evalAbst e = abstRun (fix (ev deltaAbst storeNd allocAbst) e)
 ----------------------------------------
 -- Caching
 ----------------------------------------
-{-
+
+evCache :: (Member (StoreState StoreT) r
+           ,Member (CacheOutState Cache) r
+           ,Member (ReaderCacheIn Cache) r
+           ,Member (Reader Env) r
+           ,Member NonDetEff r
+           ) =>
+           (ev -> Exp -> Eff r Var) -> ev -> Exp -> Eff r Var
 evCache ev0 ev e = do
   rho <- ask
   sigma <- getStore
-  let state = (e,rho,sigma)
+  let state :: (Exp,Env,StoreT) = (e,rho,sigma)
   outC <- getCacheOut
   case Map.lookup state outC of
     Just valStoreSet ->
@@ -297,15 +304,15 @@ evCache ev0 ev e = do
         return v
     Nothing -> do
       inC <- askCacheIn
-      let valStore0 = Map.findWithDefault Set.empty state inC
+      let valStore0 :: Set (Var, StoreT) = Map.findWithDefault Set.empty state inC
       putCacheOut (Map.insertWith Set.union state valStore0 outC)
       v <- ev0 ev e
       sigma' <- getStore
-      let valStore' = (v,sigma')
+      let valStore' :: (Var, StoreT) = (v,sigma')
       modifyCacheOut (\out ->
         Map.insertWith Set.union state (Set.singleton valStore') out)
       return v
--}
+
 -- cacheRun m = runState (runReaderT (runNDT (runStateT (runExceptT (runReaderT m _) ) _) ) _) _
 
 type StoreT = [(Addr, Val N)]
@@ -315,8 +322,8 @@ fixCache :: (Member (StoreState StoreT) r
             ,Member (Reader [(Var, Addr)]) r
             ,Member (ReaderCacheIn Cache) r
             ,Member (CacheOutState Cache) r
-            ,Member NonDetEff r)
-            => (Exp -> Eff r Var) -> Exp -> Eff r Var
+            ,Member NonDetEff r) =>
+            (Exp -> Eff r Var) -> Exp -> Eff r Var
 fixCache eval e = do
   rho <- ask
   sigma <- getStore
