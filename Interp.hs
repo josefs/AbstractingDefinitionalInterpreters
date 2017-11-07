@@ -183,16 +183,28 @@ evalFail e = failRun (fix (ev deltaFail store allocAt) e)
 ----------------------------------------
 -- Trace semantics
 ----------------------------------------
-{-
-ev_tell ev0 ev e = do rho   <- ask
-                      sigma <- getStore
-                      tell [(e, rho, sigma)]
-                      ev0 ev e
 
-traceRun m = run (runWriter (runStoreState (runError (runReader m [])) []))
+evTell :: (Member (StoreState StoreT) r
+          ,Member (Reader Env) r
+          ,Member (Writer [(Exp, Env, StoreT)]) r
+          ) =>
+          (a -> Exp -> Eff r b) -> a -> Exp -> Eff r b
+evTell ev0 ev e = do rho :: Env <- ask
+                     sigma :: StoreT <- getStore
+                     tell [(e, rho, sigma)]
+                     ev0 ev e
 
-evalTrace e = traceRun (fix (ev_tell (ev deltaFail store allocAt)) e)
--}
+traceRun m = run $
+  runWriter (
+  runStoreState (
+      runError (
+          runReader m ([] :: [(Var,Addr)])
+          )
+      ) []
+  )
+
+evalTrace e = traceRun (fix (evTell (ev deltaFail store allocAt)) e)
+
 
 ----------------------------------------
 -- Dead code Collecting semantics
