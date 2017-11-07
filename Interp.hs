@@ -184,13 +184,15 @@ evalFail e = failRun (fix (ev deltaFail store allocAt) e)
 -- Trace semantics
 ----------------------------------------
 
-evTell :: (Member (StoreState StoreT) r
+type StoreInt = [(Addr, Val Integer)]
+
+evTell :: (Member (StoreState StoreInt) r
           ,Member (Reader Env) r
-          ,Member (Writer [(Exp, Env, StoreT)]) r
+          ,Member (Writer [(Exp, Env, StoreInt)]) r
           ) =>
           (a -> Exp -> Eff r b) -> a -> Exp -> Eff r b
 evTell ev0 ev e = do rho :: Env <- ask
-                     sigma :: StoreT <- getStore
+                     sigma :: StoreInt <- getStore
                      tell [(e, rho, sigma)]
                      ev0 ev e
 
@@ -203,6 +205,7 @@ traceRun m = run $
       ) []
   )
 
+evalTrace :: Exp -> ((Either String (Val Integer), StoreInt), [(Exp, Env, StoreInt)])
 evalTrace e = traceRun (fix (evTell (ev deltaFail store allocAt)) e)
 
 
