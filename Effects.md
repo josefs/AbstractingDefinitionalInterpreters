@@ -1,7 +1,7 @@
 Document some of the issues with using algebraic effects.
 
-The biggest problem is that one needs to be a type system wizard.
-The error messages are just out of this world.
+* The biggest problem is that one needs to be a type system wizard.
+  The error messages are just out of this world.
 
 Interp.hs:286:1: error:
     • Could not deduce (Ord a0)
@@ -217,7 +217,26 @@ Interp.hs:310:1: error:
                     (t -> Eff r a2) -> t -> Eff r b
 Failed, modules loaded: AbstractionEffects.
 
-One problem seems to be that if effects have any type parameters
-(which they always have, like State, Reader and Error) then that
-parameter needs to be concrete or otherwise the Member function
-cannot match the effect.
+* One problem seems to be that if effects have any type parameters
+  (which they always have, like State, Reader and Error) then that
+  parameter needs to be concrete or otherwise the Member function
+  cannot match the effect.
+
+* I've been looking for other algebraic effects libraries on Hackage,
+  since I have so many problems with the freer library and types. But
+  the ones that I've found come up short.
+
+  + https://hackage.haskell.org/package/effect-handlers
+
+    This package doesn't have a non-determinism effect, that I need. It has
+    a search effect but it seems too limited.
+
+  + https://hackage.haskell.org/package/ether
+
+    This package is promising because it removes the problems of the
+    mtl approach but allowing to easily create new monad transformers
+    by tagging. Unfortunately it doesn't provide a non-determinism
+    effect.
+
+  + I should check out the work of Tom Schrijvers and see if any of his
+    papers provide any solutions to my problems.
