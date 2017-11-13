@@ -240,3 +240,9 @@ Failed, modules loaded: AbstractionEffects.
 
   + I should check out the work of Tom Schrijvers and see if any of his
     papers provide any solutions to my problems.
+
+  + https://hackage.haskell.org/package/extensible-effects
+
+    This package is likely to have the same problems as effect handlers
+    but I should look at it more closely nevertheless.
+    
