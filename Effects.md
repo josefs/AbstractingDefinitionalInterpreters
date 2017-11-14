@@ -245,4 +245,13 @@ Failed, modules loaded: AbstractionEffects.
 
     This package is likely to have the same problems as effect handlers
     but I should look at it more closely nevertheless.
-    
+
+
+* Maybe I can make my own effects library which has better typing properties!
+
+  The idea is to not match on the type of effect when selecting effect in
+  the run function. That means that if we want multiple state effects, we
+  have to create new state effects. So there's a bit of a downside but
+  the upside should be that we can have effects which have type parameters
+  which we cannot do right now.
+
