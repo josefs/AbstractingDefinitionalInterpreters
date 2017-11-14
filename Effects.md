@@ -255,3 +255,12 @@ Failed, modules loaded: AbstractionEffects.
   the upside should be that we can have effects which have type parameters
   which we cannot do right now.
 
+  That would mean though that all effects would have to be equipped with
+  some form of parameter, in order for the matching/selection mechanism
+  to know about the parameter and avoid selecting for it.
+  Or perhaps there's another way. When match in state, say, then we let the
+  type of the state be different to the occurrence in the matching head. But
+  we put a type equality in the premise which forces the states to be the
+  same. Something along these lines:
+
+  instance s ~ s' => Member (State s) (State s' ': rest)
