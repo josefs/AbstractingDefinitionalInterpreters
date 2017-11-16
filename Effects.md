@@ -264,3 +264,7 @@ Failed, modules loaded: AbstractionEffects.
   same. Something along these lines:
 
   instance s ~ s' => Member (State s) (State s' ': rest)
+
+  That is slightly unmodular compared to other approaches which has a general
+  Member instance and doesn't require a new Member instance for each new
+  effect.
