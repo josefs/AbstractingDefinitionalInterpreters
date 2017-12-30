@@ -126,7 +126,7 @@ ev (Delta {..}) (Store {..}) (Alloc {..}) eval e =
                    v1 <- eval e1
                    a  <- alloc x
                    ext a v1
-                   local ((x,a) :) (eval e2)
+                   local (\_ -> (x,a) : rho) (eval e2)
 
 store = Store {
   find = \a -> do sigma <- getStore
