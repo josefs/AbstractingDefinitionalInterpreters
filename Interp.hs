@@ -94,8 +94,8 @@ data Store n m = Store {
      }
 
 data Delta n m = Delta {
-       delta  :: Op -> (Val n) -> (Val n) -> Eff m (Val n),
-       isZero :: (Val n) -> Eff m Bool
+       delta  :: Op -> Val n -> Val n -> Eff m (Val n),
+       isZero :: Val n -> Eff m Bool
      }
 
 data Alloc m = Alloc {
