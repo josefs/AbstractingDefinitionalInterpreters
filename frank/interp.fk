@@ -1,0 +1,150 @@
+-- Addr = Int
+-- Numb = Int
+-- Var  = Int
+-- Env  = [(Var, Addr)]
+
+-- Bool
+
+data Bool = true | false
+
+not: {Bool -> Bool}
+not false = true
+not true  = false
+
+-- Control structures
+if : Bool -> {X} -> {X} -> X
+if true  t f = t!
+if false t f = f!
+
+-- Int
+
+eqInt : Int -> Int -> Bool
+eqInt n m = on (n ~ m) {0 -> false | 1 -> true}
+
+-- Case
+
+on : X -> {X -> Y} -> Y
+on x f = f x
+
+-- Pairs
+
+data Pair X Y = pair X Y
+
+fst: Pair X Y -> X
+fst (pair x _) = x
+
+snd: Pair X Y -> Y
+snd (pair _ y) = y
+
+-- Maybe
+
+data Maybe X = nothing | just X
+
+expectJust : Maybe X -> X
+expectJust (just X) = X
+
+-- List
+
+length : List X -> Int
+length [] = 0
+length (x :: xs) = 1 + length xs
+
+-- Expressions
+
+data Exp =
+    Var Int
+  | Numb Int
+  | If Exp Exp Exp
+  | Op2 Op Exp Exp
+  | App Exp Exp
+  | Rec Int Exp
+  | Lam Int Exp
+
+data Op =
+    Plus
+  | Div
+
+data Val N =
+    VNum N
+  | VClo Int Exp (List (Pair Int Int))
+
+interface Num N = fromIntegral : Int -> N
+
+interface Store N = find : Int -> Val N
+                  | ext  : Int -> Val N -> Unit
+
+interface Delta N = delta  : Op -> Val N -> Val N -> Val N
+                  | isZero : Val N -> Bool
+
+interface Alloc = alloc : Int -> Int
+
+----------------------------------------
+-- Faking the reader monad with a state monad
+----------------------------------------
+
+-- It seems that 'local' cannot be 
+
+-- interface Env E = ask   : E
+--                 | local : {E -> E} -> A -> A
+
+interface Env E = ask  : E
+                | localSet : E -> Unit
+
+local : {E -> [Env E]E} -> {[Env E]A} -> [Env E]A
+local f body = let e  = ask! in
+               let e' = f e in
+	       localSet e'; let a = body! in localSet e; a
+
+----------------------------------------
+-- Store State Monad
+----------------------------------------
+
+interface StateStore  X = getStore : X
+                        | putStore : X -> Unit
+
+modifyStore : {X -> [StateStore X]X} -> [StateStore X]Unit
+modifyStore f = let x  = getStore! in
+                let x' = f x  in
+		putStore x'
+
+----------------------------------------
+-- The Evaluator
+----------------------------------------
+
+ev : {Exp -> [Store N, Env (List (Pair Int Int)), Num N, Delta N, Alloc]Val N} ->
+      Exp -> [Store N, Env (List (Pair Int Int)), Num N, Delta N, Alloc]Val N
+ev eval (Var x) = find (expectJust (lookup eqInt x ask!))
+ev eval (Numb n) = VNum (fromIntegral n)
+ev eval (If e0 e1 e2) = eval (if (isZero (eval e0)) {e1} {e2})
+ev eval (Op2 o e0 e1) = delta o (eval e0) (eval e1)
+ev eval (Rec f e) = let a = alloc f in
+                    let v = local {env -> pair f a :: env} {eval e} in
+		    ext a v; v
+ev eval (Lam x e) = let rho = ask! in VClo x e rho
+ev eval (App e0 e1) = on (eval e0) {(VClo x e2 rho) ->
+   	     	      	       	   	  let v1 = eval e1 in
+                                          let a  = alloc x in
+					  ext a v1;
+					  local {env -> pair x a :: rho} {eval e2}}
+
+lookup : {{X -> X -> Bool} -> X -> List (Pair X Y) -> Maybe Y}
+lookup eq _ [] = nothing
+lookup eq x' ((pair x y)::xr) = if (eq x x') {just y} {lookup eq x' xr}
+
+store : <Store N>X -> [StateStore (List (Pair Int (Val N)))]X
+store x              = x
+store <find a -> k>  = store (k (expectJust (lookup eqInt a getStore!)))
+store <ext a v -> k> = store (k (modifyStore {sigma -> pair a v :: sigma}))
+
+allocAt : <Alloc>X -> [StateStore (List (Pair Int (Val N)))]X
+allocAt x = x
+allocAt <alloc _ -> k> = allocAt (k (length getStore!))
+
+deltaAt : <Delta Int>X -> X
+deltaAt x = x
+deltaAt <delta o n m -> k> =
+  deltaAt (k (on (pair o (pair n m)) { (pair Plus (pair (VNum a) (VNum b))) -> VNum (a + b) }))
+deltaAt <isZero v -> k> = deltaAt (k (on v {(VNum i) -> eqInt i 0}))
+
+main : {[]Int}
+main! = 1 ~ 3
