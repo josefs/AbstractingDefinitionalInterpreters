@@ -10,6 +10,9 @@ import Control.Monad.Freer
 import Control.Monad.Freer.Internal
 import Data.Proxy
 
+import qualified Data.Set as Set
+import Data.Set (Set)
+
 ----------------------------------------
 -- Store
 ----------------------------------------
@@ -117,3 +120,24 @@ localCacheIn f m = do
   let h :: ReaderCacheIn e v -> Arr r v a -> Eff r a
       h ReaderCacheIn g = g e
   interpose return h m
+
+-----------------
+-- Path Condition
+-----------------
+
+data PathCond s v where
+  GetPathCond :: PathCond s (Set s)
+  Refine :: !s -> PathCond s ()
+
+getPathCond :: (Member (PathCond s) r) => Eff r (Set s)
+getPathCond = send GetPathCond
+
+refine :: (Member (PathCond s) r) => s -> Eff r ()
+refine s = send $ Refine s
+
+runPathCond :: Ord s => Eff (PathCond s ': r) w -> Set s -> Eff r w
+runPathCond (Val x) s = return x
+runPathCond (E u q) s = case decomp u of
+  Right GetPathCond -> runPathCond (qApp q s) s
+  Right (Refine e)  -> runPathCond (qApp q ()) (Set.insert e s)
+  Left  u'          -> E u' (tsingleton (\x -> runPathCond (qApp q x) s))

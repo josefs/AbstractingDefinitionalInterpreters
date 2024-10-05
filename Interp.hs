@@ -38,8 +38,8 @@ data Exp =
     deriving (Show, Eq, Ord)
 
 data PathExpression
-  = P  Exp
-  | PN Exp
+  = P  (Val N)
+  | PN (Val N)
     deriving (Show, Eq, Ord)
 
 type PathCondition = Set.Set PathExpression
@@ -62,6 +62,8 @@ data Op =
 data Val n =
     N n
   | Clo Var Exp [(Var, Addr)]
+-- Symbolic abstraction
+  | SymV Exp
     deriving (Show, Eq, Ord)
 
 instance Num n => Num (Val n) where
@@ -102,8 +104,8 @@ data Alloc m = Alloc {
        alloc :: Var -> Eff m Addr
      }
 
-ev :: (Member (Reader [(Var, Addr)]) m, Num n) =>
-      Delta n m -> Store n m -> Alloc m
+ev :: (Member (Reader [(Var, Addr)]) m, Num n)
+   => Delta n m -> Store n m -> Alloc m
    -> (Exp -> Eff m (Val n)) -> (Exp -> Eff m (Val n))
 ev (Delta {..}) (Store {..}) (Alloc {..}) eval e =
   case e of
@@ -122,7 +124,7 @@ ev (Delta {..}) (Store {..}) (Alloc {..}) eval e =
                  return v
    Lam x e -> do rho <- ask
                  return (Clo x e rho)
-   App e0 e1 -> do (Clo x e2 rho) <- eval e0
+   App e0 e1 -> do ~(Clo x e2 rho) <- eval e0
                    v1 <- eval e1
                    a  <- alloc x
                    ext a v1
@@ -343,8 +345,7 @@ fixCache eval e = do
   rho <- ask
   sigma <- getStore
   let state :: (Exp, Env, StoreT) = (e,rho,sigma)
-  fixp <- mlfp (\fp -> do putCacheOut (Map.empty ::
-                                          Map (Exp,Env,StoreT) (Set (Var,StoreT)))
+  fixp <- mlfp (\fp -> do putCacheOut (Map.empty :: Cache)
                           putStore (sigma :: StoreT)
                           localCacheIn (const fp) (eval e) -- ? const
                           cache <- getCacheOut
@@ -398,42 +399,74 @@ storeCrush = Store {
   }
 
 crush :: Val N -> Set (Val N) -> Set (Val N)
-crush v@(Clo _ _ _) vs = Set.insert v vs
+crush v@Clo{} vs = Set.insert v vs
 crush v vs = Set.insert (N NVal) (Set.filter isClosure vs)
 
 isClosure :: Val n -> Bool
-isClosure (Clo _ _ _) = True
-isClosure _           = False
+isClosure Clo {} = True
+isClosure _      = False
 
 ----------------------------------------
 -- Symbolic Execution
 ----------------------------------------
 
 -- This is going to require changing the value type!
-{-
-evSymbolic ev0 ev (Sym x) = return (Var x)
+
+-- The paper doesn't define a separate value type.
+-- I've done that above but it gets me into trouble here
+-- because the symbolic evaluation code converts freely
+-- between values and expressions.
+
+--evSymbolic ev0 ev (Sym x) = return (SymV x)
 evSymbolic ev0 ev e       = ev0 ev e
 
 deltaSymbolic = Delta {
   delta = \o n m ->
     case (o, n, m) of
+      (Plus, N (IVal i), N (IVal j)) -> return (N (IVal (i+j)))
+      (Plus, _, _) -> return (N NVal)
+      (Minus, N (IVal i), N (IVal j)) -> return (N (IVal (i-j)))
+      (Minus, _, _) -> return (N NVal)
+      (Mult, N (IVal i), N (IVal j)) -> return (N (IVal (i*j)))
+      (Mult, _, _) -> return (N NVal)
       (Div, _, _) -> do
-        z <- isZero m
-        if z then fail
+        z <- isZero deltaSymbolic m
+        if z then mzero
           else case (n, m) of
                  (N (IVal i), N (IVal j)) -> return (N (IVal (i `div`j)))
-                 _ -> return
--}
+--                 (N k, N l) -> return $ SymV (Op2 Div n m)
+  ,
+  isZero = \v -> do
+    pathCond <- getPathCond
+    case v of
+      N (IVal n) -> return (n == 0)
+      v | Set.member (P v) pathCond -> return True
+      v | Set.member (PN v) pathCond -> return False
+      v -> mplus
+            (do refine (P v)
+                return True)
+            (do refine (PN v)
+                return False)
+
+  }
 
 ----------------------------------------
 -- Garbage Collection
 ----------------------------------------
-{-
+
+evCacheGC ::
+  (Member (StoreState StoreT) r
+  ,Member (CacheOutState CacheGC) r
+  ,Member (ReaderCacheIn CacheGC) r
+  ,Member (Reader Env) r
+  ,Member NonDetEff r
+  ) =>
+  (ev -> Exp -> Eff r Var) -> ev -> Exp -> Eff r Var
 evCacheGC ev0 ev e = do
   rho   <- ask
   sigma <- getStore
   psi   <- askRoots
-  let state = (e,rho,sigma,psi)
+  let state :: (Exp,Env,StoreT,Roots) = (e,rho,sigma,psi)
   outC <- getCacheOut
   case Map.lookup state outC of
     Just valStoreSet ->
@@ -442,64 +475,76 @@ evCacheGC ev0 ev e = do
         return v
     Nothing -> do
       inC <- askCacheIn
-      let valStore0 = Map.findWithDefault Set.empty state inC
+      let valStore0 :: Set (Var, StoreT) = Map.findWithDefault Set.empty state inC
       putCacheOut (Map.insertWith Set.union state valStore0 outC)
       v <- ev0 ev e
       sigma' <- getStore
-      let valStore' = (v,sigma')
-      updateCacheOut (\out ->
+      let valStore' :: (Var, StoreT) = (v,sigma')
+      modifyCacheOut (\out ->
         Map.insertWith Set.union state (Set.singleton valStore') out)
       return v
+
+type Roots = Set Addr
+type CacheGC = Map (Exp,Env,StoreT,Roots) (Set (Var,StoreT))
 
 fixCacheGC eval e = do
   rho   <- ask
   sigma <- getStore
   psi   <- askRoots
-  let state = (e,rho,sigma,psi)
-  fixp <- mlfp (\fp -> do putCacheOut Map.empty
-                          putStore sigma
+  let state :: (Exp, Env, StoreT, Roots) = (e,rho,sigma,psi)
+  fixp <- mlfp (\fp -> do putCacheOut (Map.empty :: CacheGC)
+                          putStore (sigma :: StoreT)
                           localCacheIn (const fp) (eval e) -- ? const
-                          getCacheOut)
-  forP (Map.lookup state fixp) $ \(v,sigma) -> do
+                          cache <- getCacheOut
+                          return (cache :: CacheGC))
+  forP (Map.findWithDefault Set.empty state fixp) $ \(v,sigma) -> do
     putStore sigma
     return v
--}
 
-{- Doesn't type check at the moment
 evCollect ev0 ev e = do
   psi <- askRoots
   v   <- (ev0 ev) e
   modifyStore (gc (Set.union psi (rootsV v)))
   return v
--}
-gc = undefined
-rootsV = undefined
 
-{- Doesn't type check at the moment
+
+gc :: Roots -> StoreT -> StoreT
+gc roots store = Prelude.filter reachable store
+  where reachable (addr,_) = Set.member addr roots
+
+rootsV (N _) = Set.empty
+rootsV (Clo _ _ env) = Set.fromList (Prelude.map snd env)
+
+{-
+I honestly don't understand this function.
+* I don't know what extraRoots is supposed to do.
+* I don't understand what isTruish does and why we need
+  something different from isZero.
+ -}
+{-
 evRoots (Delta {..}) _ _ ev0 ev (If e0 e1 e2) = do
-  rho <- askEnv
+  rho <- ask
   let psi = Set.union (roots e1 rho) (roots e2 rho)
   v <- extraRoots psi (ev e0)
   b <- isTruish v
   ev (If b e1 e2)
 evRoots (Delta {..}) _ _ ev0 ev (Op2 o e0 e1) = do
-  rho <- askEnv
+  rho <- ask
   v0  <- extraRoots (roots e1 rho) (ev e0)
   v1  <- extraRoots (rootsV v0)    (ev e1)
   delta o v0 v1
 evRoots _ (Store {..}) (Alloc {..}) ev0 ev (App e0 e1) = do
-  rho <- askEnv
+  rho <- ask
   v0  <- extraRoots (roots e1 rho) (ev e0)
   v1  <- extraRoots (rootsV v0)    (ev e1)
   case v0 of
     Clo x e2 rho' -> do
       a <- alloc x
       ext a v1
-      localEnv (const ((x,a):rho')) (ev e2)
+      local (const ((x,a):rho')) (ev e2)
 evRoots _ _ _ ev0 ev e =
   ev0 ev e
 -}
-
 askRoots = undefined
 extraRoots = undefined
 isTruish = undefined
